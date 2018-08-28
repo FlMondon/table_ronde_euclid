@@ -29,6 +29,9 @@ delta_M=-0.070
 w=-1
 omgL=np.nan
 
+H_zero_BD = 70.
+t_plus_BD = 5.2E18
+
 class utils(object):
     """
     """
@@ -159,8 +162,26 @@ class CosmoTools(object):
         -w:represent the parameter w
         """
         return 1/np.sqrt(omgM*(1+z)**3 + omgL*(1+z)**(3*(1+w)) + (1-omgM-omgL)*(1+z)**2)
+    
+    def intfun_BD(self, y_BD, t_plus_BD, t_zero_BD, r_BD, s_BD):
+        """
+        
+        """
+        a_BD = np.power((y_BD - (t_plus_BD/t_zero_BD))/(1. - (t_plus_BD/t_zero_BD)), r_BD+s_BD) * np.power(y_BD, r_BD-s_BD)
+        return 1./a_BD
+    
+    def get_x_BD_from_zcmb(z, r, s, t_plus, t_zero):
+        """
+        
+        """
+        def mini_x_BD(x):
+            alpha = t_plus/t_zero
+            return np.power((x-alpha)/(1.-alpha), r+s) * np.power(x, r-s) - 1./(1.+z)
+        m = Minuit(mini_x_BD, x=0.5, limit_x=(0.,1.), print_level=0, pedantic=False)
+        m.migrad()
+        return m.values['x']
 
-    def dL_z(self, zcmb, zhel, omgM, omgL, w):
+    def dL_z(self, zcmb, zhel, omgM, omgL, w, omg_BD):
         """ 
         Function that compute the integral for the comoving distance.
         imputs:
@@ -180,11 +201,19 @@ class CosmoTools(object):
             elif omgK > 0 :
                 mu_zz = 5*np.log10((1+zcmb)*(1/np.sqrt(omgK)) *clight*(np.sinh(np.sqrt(omgK)*quad(self.intfun,0,zcmb,args=(omgM,omgL,w))[0])/(10*H)))
                 
+        elif self.model==2018:
+            H_zero_BD/=3.085678E19
+            r_BD = (1 + omg_BD)/(4 + 3*omg_BD)
+            s_BD = (np.sqrt(1 + (2/3)*omg_BD))/(4 + 3*omg_BD)
+            t_zero_BD = ((H_zero_BD*t_plus_BD + 2*r_BD) + pm_BD*np.sqrt((H_zero_BD*t_plus_BD + 2*r_BD)**2 - 4*H_zero_BD*(r_BD-s_BD)*t_plus_BD))/(2*H_zero_BD)
+            x_BD = get_x_BD_from_zcmb(zcmb, r_BD, s_BD, t_plus_BD, t_zero_BD)
+            mu_zz = 5*np.log10((1+zcmb)*clight*t_zero_BD*(quad(self.intfun_BD,x_BD,1,args=(t_plus_BD, t_zero_BD, r_BD, s_BD))[0]))
+                
         else:
             omgL=1-omgM
             mu_zz = 5*np.log10((1+zcmb)*clight*(quad(self.intfun,0,zcmb,args=(omgM,omgL,w))[0]/(10*H)))        
           
-        return mu_zz    
+        return mu_zz 
         
     def fitfundL(self, zcmb, omgM, omgL, w):
     	"""
@@ -342,7 +371,7 @@ class JLA_Hubble_fit(CosmoTools):
         Cmu = self.Remove_Matrix(Cmu,self.IDJLA)
         return Cmu
     
-    def chi2(self,omgM,omgL,w,alpha,beta,Mb,delta_M):
+    def chi2(self,omgM,omgL,w, omg_BD,alpha,beta,Mb,delta_M):
          ''' Funtion that calculate the chi2 '''
          result=0.
          dL = np.zeros(shape=(len(self.IDJLA)))
@@ -355,7 +384,7 @@ class JLA_Hubble_fit(CosmoTools):
          #loop for matrix construction
          for i in range(len(self.zcmb)):
              zz = self.zcmb[i]           
-             dL[i] = self.dL_z(zz,zz,omgM,omgL,w)
+             dL[i] = self.dL_z(zz,zz,omgM,omgL,w, omg_BD)
 
          #contruction of the chi2 by matrix product
          result =  np.dot( (mu_z-dL), np.dot((self.Mat),(mu_z-dL)))
@@ -394,13 +423,15 @@ class JLA_Hubble_fit(CosmoTools):
         '''
         self.read_JLA()
         if self.model == 0 :
-            m = Minuit( self.chi2, omgM=0.2,omgL=np.nan,w=-1,alpha=0.141,beta=3.101,Mb=-19.05, delta_M=-0.070,limit_omgM=(0.2,0.4),limit_omgL=(-1,1),limit_w=(-1.4,0.4),limit_alpha=(0.1,0.2),limit_beta=(2.0,4.0),limit_Mb=(-20.,-18.),limit_delta_M=(-0.1,-0.0),fix_omgM=False,fix_omgL=True,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1)    
+            m = Minuit( self.chi2, omgM=0.2,omgL=np.nan,w=-1,alpha=0.141,beta=3.101,Mb=-19.05, delta_M=-0.070,limit_omgM=(0.2,0.4),limit_omgL=(-1,1),limit_w=(-1.4,0.4),limit_alpha=(0.1,0.2),limit_beta=(2.0,4.0),limit_Mb=(-20.,-18.),limit_delta_M=(-0.1,-0.0),fix_omgM=False,fix_omgL=True,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1, omg_BD=np.nan, fix_omg_BD=True)    
         elif self.model ==1 :
-            m = Minuit(self.chi2,omgM=0.2,omgL=0.55,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,fix_omgM=False,fix_omgL=False,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1)    
+            m = Minuit(self.chi2,omgM=0.2,omgL=0.55,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,fix_omgM=False,fix_omgL=False,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1, omg_BD=np.nan, fix_omg_BD=True)    
         elif self.model ==2 :    
-            m = Minuit(self.chi2,omgM=0.2,omgL=np.nan,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,fix_omgM=False,fix_omgL=True,fix_w=False, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1)    
+            m = Minuit(self.chi2,omgM=0.2,omgL=np.nan,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,fix_omgM=False,fix_omgL=True,fix_w=False, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1, omg_BD=np.nan, fix_omg_BD=True)    
+        elif self.model == 2018:
+            m = Minuit(self.chi2,omgM=np.nan,omgL=np.nan,w=np.nan,omg_BD=-1.49,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,fix_omgM=True,fix_omgL=True,fix_w=True,fix_omg_BD=False, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1) 
         else :
-            m = Minuit(self.chi2,omgM=0,omgL=0.5611,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,limit_omgM=(0,0.4),limit_omgL=(-1,1),limit_w=(-1.4,0.4),limit_alpha=(0.1,0.2),limit_beta=(2.0,4.0),limit_Mb=(-20.,-18.),limit_delta_M=(-0.1,-0.0),fix_omgM=True,fix_omgL=True,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1)    
+            m = Minuit(self.chi2,omgM=0,omgL=0.5611,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,limit_omgM=(0,0.4),limit_omgL=(-1,1),limit_w=(-1.4,0.4),limit_alpha=(0.1,0.2),limit_beta=(2.0,4.0),limit_Mb=(-20.,-18.),limit_delta_M=(-0.1,-0.0),fix_omgM=True,fix_omgL=True,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1, omg_BD=np.nan, fix_omg_BD=True)    
         
         m.migrad()
         return  m
