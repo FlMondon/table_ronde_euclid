@@ -182,7 +182,7 @@ class CosmoTools(object):
         m.migrad()
         return m.values['x']
 
-    def dL_z(self, zcmb, zhel, omgM, omgL, w, omg_BD, pm_BD=-1):
+    def dL_z(self, zcmb, zhel, omgM, omgL, w, omg_BD, h_BD, pm_BD=-1):
         """ 
         Function that compute the integral for the comoving distance.
         imputs:
@@ -203,7 +203,7 @@ class CosmoTools(object):
                 mu_zz = 5*np.log10((1+zcmb)*(1/np.sqrt(omgK)) *clight*(np.sinh(np.sqrt(omgK)*quad(self.intfun,0,zcmb,args=(omgM,omgL,w))[0])/(10*H)))
                 
         elif self.model==2018:
-            H_zero_BD = H_zero/3.085678E19
+            H_zero_BD = h_BD/3.085678E19
             r_BD = (1 + omg_BD)/(4 + 3*omg_BD)
             s_BD = (np.sqrt(1 + (2/3)*omg_BD))/(4 + 3*omg_BD)
             t_zero_BD = ((H_zero_BD*t_plus_BD + 2*r_BD) + pm_BD*np.sqrt((H_zero_BD*t_plus_BD + 2*r_BD)**2 - 4*H_zero_BD*(r_BD-s_BD)*t_plus_BD))/(2*H_zero_BD)
@@ -372,7 +372,7 @@ class JLA_Hubble_fit(CosmoTools):
         Cmu = self.Remove_Matrix(Cmu,self.IDJLA)
         return Cmu
     
-    def chi2(self,omgM,omgL,w, omg_BD,alpha,beta,Mb,delta_M):
+    def chi2(self,omgM,omgL,w, omg_BD, h_BD,alpha,beta,Mb,delta_M):
          ''' Funtion that calculate the chi2 '''
          result=0.
          dL = np.zeros(shape=(len(self.IDJLA)))
@@ -385,7 +385,7 @@ class JLA_Hubble_fit(CosmoTools):
          #loop for matrix construction
          for i in range(len(self.zcmb)):
              zz = self.zcmb[i]           
-             dL[i] = self.dL_z(zz,zz,omgM,omgL,w, omg_BD)
+             dL[i] = self.dL_z(zz,zz,omgM,omgL,w, omg_BD, h_BD)
 
          #contruction of the chi2 by matrix product
          result =  np.dot( (mu_z-dL), np.dot((self.Mat),(mu_z-dL)))
@@ -424,15 +424,15 @@ class JLA_Hubble_fit(CosmoTools):
         '''
         self.read_JLA()
         if self.model == 0 :
-            m = Minuit( self.chi2, omgM=0.2,omgL=np.nan,w=-1,alpha=0.141,beta=3.101,Mb=-19.05, delta_M=-0.070,limit_omgM=(0.2,0.4),limit_omgL=(-1,1),limit_w=(-1.4,0.4),limit_alpha=(0.1,0.2),limit_beta=(2.0,4.0),limit_Mb=(-20.,-18.),limit_delta_M=(-0.1,-0.0),fix_omgM=False,fix_omgL=True,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1, omg_BD=np.nan, fix_omg_BD=True)    
+            m = Minuit( self.chi2, omgM=0.2,omgL=np.nan,w=-1,alpha=0.141,beta=3.101,Mb=-19.05, delta_M=-0.070,limit_omgM=(0.2,0.4),limit_omgL=(-1,1),limit_w=(-1.4,0.4),limit_alpha=(0.1,0.2),limit_beta=(2.0,4.0),limit_Mb=(-20.,-18.),limit_delta_M=(-0.1,-0.0),fix_omgM=False,fix_omgL=True,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1, omg_BD=np.nan, fix_omg_BD=True, h_BD=np.nan, fix_h_BD=True)    
         elif self.model ==1 :
-            m = Minuit(self.chi2,omgM=0.2,omgL=0.55,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,fix_omgM=False,fix_omgL=False,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1, omg_BD=np.nan, fix_omg_BD=True)    
+            m = Minuit(self.chi2,omgM=0.2,omgL=0.55,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,fix_omgM=False,fix_omgL=False,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1, omg_BD=np.nan, fix_omg_BD=True, h_BD=np.nan, fix_h_BD=True)    
         elif self.model ==2 :    
-            m = Minuit(self.chi2,omgM=0.2,omgL=np.nan,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,fix_omgM=False,fix_omgL=True,fix_w=False, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1, omg_BD=np.nan, fix_omg_BD=True)    
+            m = Minuit(self.chi2,omgM=0.2,omgL=np.nan,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,fix_omgM=False,fix_omgL=True,fix_w=False, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1, omg_BD=np.nan, fix_omg_BD=True, h_BD=np.nan, fix_h_BD=True)    
         elif self.model == 2018:
-            m = Minuit(self.chi2,omgM=np.nan,omgL=np.nan,w=np.nan,omg_BD=-1.49,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,fix_omgM=True,fix_omgL=True,fix_w=True,fix_omg_BD=False, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1, limit_omg_BD=(-1.49, -1.34)) 
+            m = Minuit(self.chi2,omgM=np.nan,omgL=np.nan,w=np.nan,omg_BD=-1.49,h_BD=70.,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,fix_omgM=True,fix_omgL=True,fix_w=True,fix_omg_BD=False,fix_h_BD=False, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1, limit_omg_BD=(-1.49, -1.34)) 
         else :
-            m = Minuit(self.chi2,omgM=0,omgL=0.5611,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,limit_omgM=(0,0.4),limit_omgL=(-1,1),limit_w=(-1.4,0.4),limit_alpha=(0.1,0.2),limit_beta=(2.0,4.0),limit_Mb=(-20.,-18.),limit_delta_M=(-0.1,-0.0),fix_omgM=True,fix_omgL=True,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1, omg_BD=np.nan, fix_omg_BD=True)    
+            m = Minuit(self.chi2,omgM=0,omgL=0.5611,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,limit_omgM=(0,0.4),limit_omgL=(-1,1),limit_w=(-1.4,0.4),limit_alpha=(0.1,0.2),limit_beta=(2.0,4.0),limit_Mb=(-20.,-18.),limit_delta_M=(-0.1,-0.0),fix_omgM=True,fix_omgL=True,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1, omg_BD=np.nan, fix_omg_BD=True, h_BD=np.nan, fix_h_BD=True)    
         
         m.migrad()
         return  m
