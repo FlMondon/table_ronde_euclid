@@ -9,7 +9,7 @@ Created on Fri Aug 24 17:34:59 2018
 import numpy as np
 import cPickle as pkl
 from iminuit import Minuit, describe, Struct
-from mathplotlib import pyplot as plt
+from matplotlib import pyplot as plt
 from scipy.integrate import quad
 import glob
 import pyfits
@@ -223,14 +223,15 @@ class JLA_Hubble_fit(CosmoTools):
 
     """
     """
-    def __init__(self, path_params, cov_path, sigma_mu_path):
+    def __init__(self, path_params, cov_path, sigma_mu_path, model=0):
         """
         """
         self.path_params = path_params
         self.cov_path = cov_path
         self.sigma_mu_path = sigma_mu_path
-        
-        
+        self.model = model
+        self.cache_alpha = np.nan
+        self.cache_beta = np.nan
     def read_JLA(self):
         """
         read JLA data (cf Marc Betoule 2014)
@@ -256,8 +257,8 @@ class JLA_Hubble_fit(CosmoTools):
         self.cov_mc = np.array(jlaData[:,15],float)
         self.cov_sc = np.array(jlaData[:,16],float)   
         self.IDJLA = np.arange(740)
-    
-    def muexp(self, alpha, beta, Mb, delta_M, M_stell):
+
+    def muexp(self, alpha, beta, Mb, delta_M):
         	"""
         	#Correction to muexp regarding the stellar mass of the host galaxy (cf Betoule et al 2014)
         	imputs:
@@ -273,7 +274,7 @@ class JLA_Hubble_fit(CosmoTools):
         	mu=[]
         	#As M.Betoule (choose one or the other)
         	for i in range(len(self.mB)):
-        		if M_stell[i]<10:
+        		if self.M_stell[i]<10:
         			mu.append(self.mB[i]-Mb+alpha*self.X1[i]-beta*self.C[i])
         		else :
         			mu.append(self.mB[i]-Mb-delta_M+alpha*self.X1[i]-beta*self.C[i])
@@ -299,32 +300,6 @@ class JLA_Hubble_fit(CosmoTools):
         	for i in range(len(self.dmB)):
         	        dmu.append(np.sqrt(self.dmB[i]**2+(alpha*self.dX1[i])**2+(beta*self.dC[i])**2))
         	return dmu    
-     
-    def Cstat(self):
-        """
-        function that make a statistical covariance matrix with the covariance term between the fit parameters
-        this matrix is diag by bloc
-        input:
-        -IDJLA: ref of the SN
-        -cov-ms:array contains all covariance term between Mb and X1 by SN
-        -cov-mc:array contains all covariance term between Mb and C by SN
-        -cov-sc:array contains all covariance term between C and X1 by SN
-        """
-        
-        Cstat= np.zeros([len(self.dm)*3,len(self.dm)*3])
-        
-        for i in range(len(self.dm)):
-            Cstat[i*3,i*3]= self.dm[i]**2
-            Cstat[i*3,i*3 +1]= self.cov_ms[i]
-            Cstat[i*3,i*3 +2]= self.cov_mc[i]
-            Cstat[i*3 +1,i*3]= self.cov_ms[i]
-            Cstat[i*3 +2,i*3 ]= self.cov_mc[i]
-            
-            Cstat[i*3 +1,i*3 +1]= self.dX1[i]**2
-            Cstat[i*3 +1,i*3 +2]= self.cov_sc[i]
-            Cstat[i*3 +2,i*3 +1]= self.cov_sc[i]
-            Cstat[i*3+2,i*3 +2]= self.dC[i]**2         
-        self.Cstat = Cstat
 
     def mu_cov(self, alpha, beta):
         """
@@ -364,25 +339,26 @@ class JLA_Hubble_fit(CosmoTools):
         sigma_pecvel = (5 * 150 / 3e5) / (np.log(10.) * sigma[:, 2])
         Cmu[np.diag_indices_from(Cmu)] += sigma_pecvel ** 2 + sigma[:, 0] ** 2 + sigma[:, 1] ** 2  
     #    Cmu=N.diag(Cmu[N.diag_indices_from(Cmu)])
-        self.Cmu = self.Remove_Matrix(Cmu,self.IDJLA)
-        
+        Cmu = self.Remove_Matrix(Cmu,self.IDJLA)
+        return Cmu
     
-	def chi2(self,omgM,omgL,w,alpha,beta,Mb,delta_M):
+    def chi2(self,omgM,omgL,w,alpha,beta,Mb,delta_M):
          ''' Funtion that calculate the chi2 '''
          result=0.
+         dL = np.zeros(shape=(len(self.IDJLA)))
          if alpha!=self.cache_alpha or beta!=self.cache_beta:
              self.Mat = np.linalg.inv(self.mu_cov(alpha,beta))
              self.cache_alpha = alpha
              self.cache_beta = beta
-         mu_z = self.muexp(self.mB,self.X1,self.C,alpha,beta,Mb,delta_M,self.M_stell)
+         mu_z = self.muexp(alpha,beta,Mb,delta_M)
 
          #loop for matrix construction
          for i in range(len(self.zcmb)):
              zz = self.zcmb[i]           
-             self.dL[i] = self.dL_z(self.fixe,zz,zz,omgM,omgL,w)
+             dL[i] = self.dL_z(zz,zz,omgM,omgL,w)
 
          #contruction of the chi2 by matrix product
-         result =  np.dot( (mu_z-self.dL), np.dot((self.Mat),(mu_z-self.dL)))
+         result =  np.dot( (mu_z-dL), np.dot((self.Mat),(mu_z-dL)))
          return result
 
     def Hubble_diagram(self):
@@ -416,18 +392,23 @@ class JLA_Hubble_fit(CosmoTools):
         '''
         the values of the free parameter can be initialized.
         '''
-      
+        self.read_JLA()
         if self.model == 0 :
-    #        m=Minuit(chi2mini.chi2,omgM=0.295,omgL=N.nan,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,limit_omgM=(0.2,0.4),limit_omgL=(-1,1),limit_w=(-1.4,0.4),limit_alpha=(0.1,0.2),limit_beta=(2.0,4.0),limit_Mb=(-20.,-18.),limit_delta_M=(-0.1,-0.0),fix_omgM=False,fix_omgL=True,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1)    
-            m=Minuit(self.chi2,omgM=0.2,omgL=np.nan,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,limit_omgM=(0.2,0.4),limit_omgL=(-1,1),limit_w=(-1.4,0.4),limit_alpha=(0.1,0.2),limit_beta=(2.0,4.0),limit_Mb=(-20.,-18.),limit_delta_M=(-0.1,-0.0),fix_omgM=False,fix_omgL=True,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1)    
+            m = Minuit( self.chi2, omgM=0.2,omgL=np.nan,w=-1,alpha=0.141,beta=3.101,Mb=-19.05, delta_M=-0.070,limit_omgM=(0.2,0.4),limit_omgL=(-1,1),limit_w=(-1.4,0.4),limit_alpha=(0.1,0.2),limit_beta=(2.0,4.0),limit_Mb=(-20.,-18.),limit_delta_M=(-0.1,-0.0),fix_omgM=False,fix_omgL=True,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1)    
         elif self.model ==1 :
-    #        last_iter_args={u'fix_Mb': True, u'limit_w': None, u'fix_delta_M': True, u'error_omgL': 0.1672842193144214, u'error_omgM': 0.11284796124765262, 'delta_M': -0.07040462309885408, u'error_Mb': 0.02559618467415318, u'error_w': 1.0, u'error_alpha': 0.006593439955397084, u'fix_alpha': True, u'limit_alpha': None, 'Mb': -19.038807526119403, u'limit_omgM': None, u'limit_omgL': None, u'limit_Mb': None, 'beta': 3.0999314004965535, u'limit_delta_M': None, u'limit_beta': None, 'alpha': 0.14098769528058613, 'omgM': 0.20020038670359183, 'omgL': 0.561065865545341, u'fix_w': True, u'fix_beta': True, u'fix_omgM': False, u'fix_omgL': False, u'error_delta_M': 0.023111327883836057, u'error_beta': 0.08066293365248206, 'w': -1.0}
-    #        m=Minuit(chi2mini.chi2,**last_iter_args)           
-            m=Minuit(self.chi2,omgM=0.2,omgL=0.55,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,fix_omgM=False,fix_omgL=False,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1)    
+            m = Minuit(self.chi2,omgM=0.2,omgL=0.55,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,fix_omgM=False,fix_omgL=False,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1)    
         elif self.model ==2 :    
-            m=Minuit(self.chi2,omgM=0.2,omgL=np.nan,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,fix_omgM=False,fix_omgL=True,fix_w=False, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1)    
+            m = Minuit(self.chi2,omgM=0.2,omgL=np.nan,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,fix_omgM=False,fix_omgL=True,fix_w=False, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1)    
         else :
-            m=Minuit(self.chi2,omgM=0,omgL=0.5611,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,limit_omgM=(0,0.4),limit_omgL=(-1,1),limit_w=(-1.4,0.4),limit_alpha=(0.1,0.2),limit_beta=(2.0,4.0),limit_Mb=(-20.,-18.),limit_delta_M=(-0.1,-0.0),fix_omgM=True,fix_omgL=True,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1)    
+            m = Minuit(self.chi2,omgM=0,omgL=0.5611,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,limit_omgM=(0,0.4),limit_omgL=(-1,1),limit_w=(-1.4,0.4),limit_alpha=(0.1,0.2),limit_beta=(2.0,4.0),limit_Mb=(-20.,-18.),limit_delta_M=(-0.1,-0.0),fix_omgM=True,fix_omgL=True,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1)    
         
         m.migrad()
         return  m
+    
+if __name__=="__main__":
+        path_params = './data_input/jla_lcparams.txt'
+        cov_path = './data_input/covmat/C*.fits'
+        sigma_mu_path = './data_input/covmat/sigma_mu.txt'
+        hd_obj = JLA_Hubble_fit(path_params, cov_path, sigma_mu_path)
+        m_obj = hd_obj.Hubble_diagram()
+        print m_obj.values
