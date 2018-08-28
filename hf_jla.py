@@ -14,6 +14,7 @@ from scipy.integrate import quad
 import glob
 import pyfits
 import types
+import emcee
 
 ###########
 #constants
@@ -29,7 +30,7 @@ delta_M=-0.070
 w=-1
 omgL=np.nan
 
-H_zero_BD = 70.
+H_zero = 59.4 #a changer
 t_plus_BD = 5.2E18
 
 class utils(object):
@@ -170,7 +171,7 @@ class CosmoTools(object):
         a_BD = np.power((y_BD - (t_plus_BD/t_zero_BD))/(1. - (t_plus_BD/t_zero_BD)), r_BD+s_BD) * np.power(y_BD, r_BD-s_BD)
         return 1./a_BD
     
-    def get_x_BD_from_zcmb(z, r, s, t_plus, t_zero):
+    def get_x_BD_from_zcmb(self, z, r, s, t_plus, t_zero):
         """
         
         """
@@ -181,7 +182,7 @@ class CosmoTools(object):
         m.migrad()
         return m.values['x']
 
-    def dL_z(self, zcmb, zhel, omgM, omgL, w, omg_BD):
+    def dL_z(self, zcmb, zhel, omgM, omgL, w, omg_BD, pm_BD=-1):
         """ 
         Function that compute the integral for the comoving distance.
         imputs:
@@ -202,11 +203,11 @@ class CosmoTools(object):
                 mu_zz = 5*np.log10((1+zcmb)*(1/np.sqrt(omgK)) *clight*(np.sinh(np.sqrt(omgK)*quad(self.intfun,0,zcmb,args=(omgM,omgL,w))[0])/(10*H)))
                 
         elif self.model==2018:
-            H_zero_BD/=3.085678E19
+            H_zero_BD = H_zero/3.085678E19
             r_BD = (1 + omg_BD)/(4 + 3*omg_BD)
             s_BD = (np.sqrt(1 + (2/3)*omg_BD))/(4 + 3*omg_BD)
             t_zero_BD = ((H_zero_BD*t_plus_BD + 2*r_BD) + pm_BD*np.sqrt((H_zero_BD*t_plus_BD + 2*r_BD)**2 - 4*H_zero_BD*(r_BD-s_BD)*t_plus_BD))/(2*H_zero_BD)
-            x_BD = get_x_BD_from_zcmb(zcmb, r_BD, s_BD, t_plus_BD, t_zero_BD)
+            x_BD = self.get_x_BD_from_zcmb(zcmb, r_BD, s_BD, t_plus_BD, t_zero_BD)
             mu_zz = 5*np.log10((1+zcmb)*clight*t_zero_BD*(quad(self.intfun_BD,x_BD,1,args=(t_plus_BD, t_zero_BD, r_BD, s_BD))[0]))
                 
         else:
@@ -429,17 +430,21 @@ class JLA_Hubble_fit(CosmoTools):
         elif self.model ==2 :    
             m = Minuit(self.chi2,omgM=0.2,omgL=np.nan,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,fix_omgM=False,fix_omgL=True,fix_w=False, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1, omg_BD=np.nan, fix_omg_BD=True)    
         elif self.model == 2018:
-            m = Minuit(self.chi2,omgM=np.nan,omgL=np.nan,w=np.nan,omg_BD=-1.49,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,fix_omgM=True,fix_omgL=True,fix_w=True,fix_omg_BD=False, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1) 
+            m = Minuit(self.chi2,omgM=np.nan,omgL=np.nan,w=np.nan,omg_BD=-1.49,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,fix_omgM=True,fix_omgL=True,fix_w=True,fix_omg_BD=False, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1, limit_omg_BD=(-1.49, -1.34)) 
         else :
             m = Minuit(self.chi2,omgM=0,omgL=0.5611,w=-1,alpha=0.141,beta=3.101,Mb=-19.05,delta_M=-0.070,limit_omgM=(0,0.4),limit_omgL=(-1,1),limit_w=(-1.4,0.4),limit_alpha=(0.1,0.2),limit_beta=(2.0,4.0),limit_Mb=(-20.,-18.),limit_delta_M=(-0.1,-0.0),fix_omgM=True,fix_omgL=True,fix_w=True, fix_alpha=False, fix_beta=False, fix_Mb=False, fix_delta_M=False, print_level=1, omg_BD=np.nan, fix_omg_BD=True)    
         
         m.migrad()
         return  m
-    
+#    def chi2_mcmc(self):
+#        
+#    def mcmc(self):
+        
 if __name__=="__main__":
-        path_params = './data_input/jla_lcparams.txt'
-        cov_path = './data_input/covmat/C*.fits'
-        sigma_mu_path = './data_input/covmat/sigma_mu.txt'
+        path_params = '../data_input/jla_lcparams.txt'
+        cov_path = '../data_input/covmat/C*.fits'
+        sigma_mu_path = '../data_input/covmat/sigma_mu.txt'
         hd_obj = JLA_Hubble_fit(path_params, cov_path, sigma_mu_path)
+        hd_obj.model = 2018
         m_obj = hd_obj.Hubble_diagram()
         print m_obj.values
